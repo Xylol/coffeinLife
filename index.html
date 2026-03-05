@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>coffeinLife</title>
+  </head>
+  <body>
+    <div id="app">
+      <h1>coffeinLife</h1>
+      <div class="input-row">
+        <input type="text" id="time-input" placeholder="HH:MM" maxlength="5" />
+        <button id="add-now">+ now</button>
+        <button id="add-time">+ at time</button>
+        <button id="settings-toggle" class="settings-btn" title="Settings">&#9881;</button>
+      </div>
+      <div id="settings" class="settings" hidden>
+        <label>Half-life <input type="number" id="half-life-input" min="0.5" step="0.5" /> h</label>
+        <button id="reset-half-life">reset</button>
+        <span class="settings-sep">|</span>
+        <button id="export-json">export</button>
+        <button id="import-json">import</button>
+        <input type="file" id="import-file" accept=".json" hidden />
+      </div>
+      <div id="sober-info" class="sober-info"></div>
+      <div class="main-layout">
+        <table id="coffee-table">
+          <thead><tr><th>Time</th><th>mg</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <canvas id="graph" width="600" height="300"></canvas>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
