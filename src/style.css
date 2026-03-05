@@ -14,11 +14,12 @@ h1 { font-size: 1.4rem; margin-bottom: 0.75rem; }
   display: flex;
   gap: 0.5rem;
   align-items: center;
-  margin-bottom: 1rem;
-  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
 }
 
-.input-row input {
+.input-row input, .input-row button:not(.settings-btn) {
+  flex: 0 0 auto;
+  width: 5rem;
   background: #2a2a2a;
   border: 1px solid #444;
   color: #e0e0e0;
@@ -26,22 +27,17 @@ h1 { font-size: 1.4rem; margin-bottom: 0.75rem; }
   border-radius: 0.25rem;
   font-size: 0.85rem;
   font-family: inherit;
-  width: 4rem;
   text-align: center;
 }
 
-.input-row button {
+.input-row button:not(.settings-btn) {
   background: #3a3a3a;
   border: 1px solid #555;
-  color: #e0e0e0;
-  padding: 0.4rem 0.75rem;
-  border-radius: 0.25rem;
   cursor: pointer;
-  font-size: 0.85rem;
   white-space: nowrap;
 }
 
-.input-row button:hover { background: #4a4a4a; }
+.input-row button:not(.settings-btn):hover { background: #4a4a4a; }
 
 .main-layout {
   display: flex;
@@ -49,21 +45,26 @@ h1 { font-size: 1.4rem; margin-bottom: 0.75rem; }
   align-items: flex-start;
 }
 
+.left-col { flex-shrink: 0; width: max-content; align-self: center; }
+
 /* table */
-table { border-collapse: collapse; font-size: 0.85rem; flex-shrink: 0; }
-th, td { border: 1px solid #333; padding: 0.25rem 0.6rem; text-align: left; }
+table { border-collapse: collapse; font-size: 0.85rem; }
+th, td { border: 1px solid #333; padding: 0.25rem 0.6rem; text-align: left; white-space: nowrap; }
+th:last-child, td:last-child { width: 1.5rem; text-align: center; }
 th { background: #2a2a2a; }
 td { cursor: pointer; }
 td:hover { background: #2a2a2a; }
 td input {
-  background: #2a2a2a;
-  border: 1px solid #555;
+  background: transparent;
+  border: none;
   color: #e0e0e0;
-  padding: 0.1rem 0.25rem;
-  font-size: 0.85rem;
+  padding: 0;
+  margin: 0;
+  font-size: inherit;
   font-family: inherit;
+  outline: none;
+  width: 100%;
 }
-td input[type="text"] { width: 11rem; }
 td button.del {
   background: none;
   border: none;
@@ -77,57 +78,96 @@ td button.del:hover { color: #e44; }
 /* sober info */
 .sober-info {
   font-size: 0.85rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.4rem;
   color: #999;
+  text-align: center;
 }
 .sober-info:empty { display: none; }
 
-/* settings */
+/* settings button */
 .settings-btn {
   background: none !important;
   border: none !important;
   font-size: 1.1rem;
   padding: 0.2rem 0.4rem !important;
   opacity: 0.5;
+  color: #e0e0e0;
+  cursor: pointer;
 }
 .settings-btn:hover { opacity: 1; }
 
-.settings {
+/* settings overlay */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
   display: flex;
-  gap: 0.75rem;
   align-items: center;
-  margin-bottom: 1rem;
-  font-size: 0.85rem;
+  justify-content: center;
+  z-index: 100;
 }
-.settings[hidden] { display: none; }
-.settings label { display: flex; gap: 0.4rem; align-items: center; }
-.settings input {
+.overlay[hidden] { display: none; }
+.overlay-box {
   background: #2a2a2a;
   border: 1px solid #444;
-  color: #e0e0e0;
-  padding: 0.25rem 0.4rem;
-  border-radius: 0.25rem;
-  width: 4rem;
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  min-width: 16rem;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   font-size: 0.85rem;
 }
-.settings button {
+.overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1rem;
+  font-weight: bold;
+}
+.overlay-header .settings-btn { font-size: 1.3rem; }
+.overlay-box label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+.overlay-box input {
+  background: #1a1a1a;
+  border: 1px solid #555;
+  color: #e0e0e0;
+  padding: 0.3rem 0.4rem;
+  border-radius: 0.25rem;
+  width: 4.5rem;
+  font-size: 0.85rem;
+  text-align: center;
+}
+.overlay-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+.overlay-actions button {
+  flex: 1;
   background: #3a3a3a;
   border: 1px solid #555;
   color: #e0e0e0;
-  padding: 0.25rem 0.6rem;
+  padding: 0.35rem 0.6rem;
   border-radius: 0.25rem;
   cursor: pointer;
   font-size: 0.8rem;
 }
-.settings button:hover { background: #4a4a4a; }
-.settings-sep { color: #444; margin: 0 0.1rem; }
+.overlay-actions button:hover { background: #4a4a4a; }
 
 /* graph */
+.graph-wrapper {
+  flex: 1 1 0;
+  min-width: 0;
+}
 canvas {
   background: #222;
   border-radius: 0.25rem;
-  flex: 1 1 0;
-  min-width: 0;
   width: 100%;
   max-height: 50vh;
 }
