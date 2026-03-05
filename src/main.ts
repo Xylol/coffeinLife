@@ -8,29 +8,37 @@ interface CoffeeEntry {
 }
 
 const MS_PER_HOUR = 60 * 60 * 1000;
-const DEFAULT_HALF_LIFE_H = 6;
-const DEFAULT_MG = 100;
+const DEFAULT_HALF_LIFE_H = 5;
+const PEAK_TIME_MS = 45 * 60 * 1000; // 45 min absorption delay
+const DEFAULT_DEFAULT_MG = 100;
+const DEFAULT_THRESHOLD_MG = 10;
 const STORAGE_KEY = "coffeinLife";
-const HALF_LIFE_STORAGE_KEY = "coffeinLife-half-life";
+const SETTINGS_STORAGE_KEY = "coffeinLife-settings";
 
-let halfLifeH = loadHalfLife();
+let halfLifeH = DEFAULT_HALF_LIFE_H;
+let defaultMg = DEFAULT_DEFAULT_MG;
+let thresholdMg = DEFAULT_THRESHOLD_MG;
+loadSettings();
 
-function loadHalfLife(): number {
-  const stored = localStorage.getItem(HALF_LIFE_STORAGE_KEY);
-  return stored ? Number(stored) : DEFAULT_HALF_LIFE_H;
+function loadSettings() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}");
+    if (typeof stored.halfLifeH === "number" && stored.halfLifeH > 0) halfLifeH = stored.halfLifeH;
+    if (typeof stored.defaultMg === "number" && stored.defaultMg > 0) defaultMg = stored.defaultMg;
+    if (typeof stored.thresholdMg === "number" && stored.thresholdMg >= 0) thresholdMg = stored.thresholdMg;
+  } catch { /* use defaults */ }
 }
-function saveHalfLife() {
-  localStorage.setItem(HALF_LIFE_STORAGE_KEY, String(halfLifeH));
+function saveSettings() {
+  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ halfLifeH, defaultMg, thresholdMg }));
 }
 function decay(): number {
   return Math.LN2 / (halfLifeH * MS_PER_HOUR);
 }
 const GRAPH_LOOKAHEAD_H = 24;
 const GRAPH_LOOKBEHIND_H = 1;
-const THRESHOLD_MG = 5;
 const MIN_GRAPH_SAMPLES = 200;
 const X_LABEL_TARGET = 6;
-const GRAPH_PAD = { top: 0.08, right: 0.04, bottom: 0.1, left: 0.12 };
+const GRAPH_PAD = { top: 0.08, right: 0.04, bottom: 0.1, left: 0.16 };
 const CURVE_WIDTH = 2;
 const DOT_RADIUS = 4;
 const DASH_PATTERN = [4, 4];
@@ -40,6 +48,7 @@ const CURVE_FILL = "rgba(102,204,255,0.1)";
 // --- State ---
 let entries: CoffeeEntry[] = load();
 let editingId: number | null = null;
+let editingField: "time" | "mg" | null = null;
 let nextId = entries.reduce((mx, e) => Math.max(mx, e.id), 0) + 1;
 
 // --- Persistence ---
@@ -90,11 +99,13 @@ function sortEntries() {
 }
 
 // --- DOM refs ---
+const mgInput = document.getElementById("mg-input") as HTMLInputElement;
 const timeInput = document.getElementById("time-input") as HTMLInputElement;
 const tbody = document.querySelector("#coffee-table tbody") as HTMLTableSectionElement;
 const canvas = document.getElementById("graph") as HTMLCanvasElement;
 
-// default time input to now
+// default inputs
+mgInput.value = String(defaultMg);
 timeInput.value = fmtHHMM(new Date());
 
 // --- Add entries ---
@@ -108,7 +119,8 @@ document.getElementById("add-time")!.addEventListener("click", () => {
 });
 
 function addEntry(time: number) {
-  entries.push({ id: nextId++, time, mg: DEFAULT_MG });
+  const mg = Math.max(0, Number(mgInput.value) || defaultMg);
+  entries.push({ id: nextId++, time, mg });
   sortEntries();
   save();
   render();
@@ -131,10 +143,10 @@ function findSoberTime(): number | null {
   let hi = latest + 48 * MS_PER_HOUR; // generous upper bound
   while (hi - lo > 60_000) { // 1 min precision
     const mid = (lo + hi) / 2;
-    if (caffeineAt(mid) >= THRESHOLD_MG) lo = mid;
+    if (caffeineAt(mid) >= thresholdMg) lo = mid;
     else hi = mid;
   }
-  return caffeineAt(lo) >= THRESHOLD_MG ? hi : lo;
+  return caffeineAt(lo) >= thresholdMg ? hi : lo;
 }
 
 function renderSoberInfo() {
@@ -150,7 +162,7 @@ function renderSoberInfo() {
     const diffMs = soberAt - now;
     const h = Math.floor(diffMs / MS_PER_HOUR);
     const m = Math.ceil((diffMs % MS_PER_HOUR) / 60_000);
-    soberInfo.textContent = `sober at ${fmtTime(soberAt)} (in ${h}h ${pad2(m)}m)`;
+    soberInfo.textContent = `caffeine-free at ${fmtTime(soberAt)} (in ${h}h ${pad2(m)}m)`;
   }
 }
 
@@ -168,14 +180,14 @@ function renderTable() {
 
     // time cell
     const tdTime = document.createElement("td");
-    if (editingId === entry.id) {
+    if (editingId === entry.id && editingField === "time") {
       const inp = document.createElement("input");
       inp.type = "text";
       inp.value = fmtTime(entry.time);
       inp.placeholder = "yyyy-MM-dd HH:MM";
       inp.addEventListener("keydown", (e) => {
         if (e.key === "Enter") inp.blur();
-        if (e.key === "Escape") { editingId = null; render(); }
+        if (e.key === "Escape") { editingId = null; editingField = null; render(); }
       });
       inp.addEventListener("blur", () => {
         const t = parseDatetime(inp.value);
@@ -185,6 +197,7 @@ function renderTable() {
           save();
         }
         editingId = null;
+        editingField = null;
         render();
       });
       tdTime.appendChild(inp);
@@ -193,32 +206,39 @@ function renderTable() {
       tdTime.textContent = fmtTime(entry.time);
       tdTime.addEventListener("click", () => {
         editingId = entry.id;
+        editingField = "time";
         render();
       });
     }
 
     // mg cell
     const tdMg = document.createElement("td");
-    if (editingId === entry.id) {
+    if (editingId === entry.id && editingField === "mg") {
       const inp = document.createElement("input");
-      inp.type = "number";
+      inp.type = "text";
+      inp.inputMode = "numeric";
       inp.value = String(entry.mg);
-      inp.style.width = "4rem";
-      inp.addEventListener("change", () => {
-        entry.mg = Math.max(0, Number(inp.value));
-        editingId = null;
-        save();
-        render();
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") inp.blur();
+        if (e.key === "Escape") { editingId = null; editingField = null; render(); }
       });
       inp.addEventListener("blur", () => {
+        const val = Number(inp.value);
+        if (!isNaN(val) && val >= 0) {
+          entry.mg = val;
+          save();
+        }
         editingId = null;
+        editingField = null;
         render();
       });
       tdMg.appendChild(inp);
+      setTimeout(() => { inp.focus(); inp.select(); }, 0);
     } else {
       tdMg.textContent = String(entry.mg);
       tdMg.addEventListener("click", () => {
         editingId = entry.id;
+        editingField = "mg";
         render();
       });
     }
@@ -238,12 +258,25 @@ function renderTable() {
 }
 
 // --- Graph ---
+function absorption(dt: number): number {
+  // Models delayed absorption: rises to 1.0 at PEAK_TIME_MS, then stays at 1.0
+  if (dt <= 0) return 0;
+  if (dt >= PEAK_TIME_MS) return 1;
+  // Smooth ramp using sine curve (0 → 1 over peak time)
+  return Math.sin((dt / PEAK_TIME_MS) * (Math.PI / 2));
+}
+
 function caffeineAt(t: number): number {
   let total = 0;
+  const k = decay();
   for (const e of entries) {
     if (e.time > t) continue;
-    const remaining = e.mg * Math.exp(-decay() * (t - e.time));
-    if (remaining >= THRESHOLD_MG) total += remaining;
+    const dt = t - e.time;
+    const absorbed = e.mg * absorption(dt);
+    // Decay starts from peak time; before peak, no decay yet
+    const decayTime = Math.max(0, dt - PEAK_TIME_MS);
+    const remaining = absorbed * Math.exp(-k * decayTime);
+    if (remaining >= thresholdMg) total += remaining;
   }
   return total;
 }
@@ -290,7 +323,7 @@ function drawGraph() {
     if (v > maxVal) maxVal = v;
   }
   // snap y scale to whole coffees (ceiling), minimum 1 coffee
-  maxVal = Math.max(Math.ceil(maxVal / DEFAULT_MG), 1) * DEFAULT_MG;
+  maxVal = Math.max(Math.ceil(maxVal / defaultMg), 1) * defaultMg;
 
   function tx(t: number) {
     return gPad.left + ((t - earliest) / tRange) * gw;
@@ -304,24 +337,27 @@ function drawGraph() {
   ctx.lineWidth = 1;
   ctx.fillStyle = "#888";
   ctx.font = `${Math.min(0.7, 11 / 16)}rem system-ui`;
+  const textMetrics = ctx.measureText("0");
+  const textH = textMetrics.actualBoundingBoxAscent + textMetrics.actualBoundingBoxDescent;
 
   // y axis — tick per coffee count
-  const maxCoffees = Math.round(maxVal / DEFAULT_MG);
+  const maxCoffees = Math.round(maxVal / defaultMg);
   ctx.textAlign = "right";
   for (let c = 0; c <= maxCoffees; c++) {
-    const v = c * DEFAULT_MG;
+    const v = c * defaultMg;
     const y = ty(v);
     ctx.beginPath();
     ctx.moveTo(gPad.left, y);
     ctx.lineTo(W - gPad.right, y);
     ctx.stroke();
-    ctx.fillText(String(c), gPad.left - 6, y + 4);
+    ctx.fillText(`${c} (${v}mg)`, gPad.left - textH * 0.5, y + textH * 0.4);
   }
 
   // x axis — time labels
   ctx.textAlign = "center";
   const totalHours = tRange / MS_PER_HOUR;
   const labelEvery = Math.max(1, Math.ceil(totalHours / X_LABEL_TARGET));
+  const xLabelY = gPad.top + gh + textH * 1.8;
   for (let h = 0; h <= Math.ceil(totalHours); h += labelEvery) {
     const t = earliest + h * MS_PER_HOUR;
     const x = tx(t);
@@ -330,7 +366,7 @@ function drawGraph() {
     ctx.moveTo(x, gPad.top);
     ctx.lineTo(x, gPad.top + gh);
     ctx.stroke();
-    ctx.fillText(fmtHHMM(new Date(t)), x, gPad.top + gh + 14);
+    ctx.fillText(fmtHHMM(new Date(t)), x, xLabelY);
   }
 
   // y-axis label
@@ -353,27 +389,52 @@ function drawGraph() {
     ctx.setLineDash([]);
     ctx.fillStyle = "#888";
     ctx.textAlign = "center";
-    ctx.fillText("now", tx(now), gPad.top - 4);
+    const nowMg = Math.round(caffeineAt(now));
+    ctx.fillText(`now ${nowMg}mg`, tx(now), gPad.top - 4);
   }
 
-  // curve
+  // curve — only draw segments above threshold
   ctx.strokeStyle = CURVE_COLOR;
   ctx.lineWidth = CURVE_WIDTH;
-  ctx.beginPath();
+  let inSegment = false;
   for (let i = 0; i < samples.length; i++) {
+    const above = samples[i].v >= thresholdMg;
     const x = tx(samples[i].t);
-    const y = ty(samples[i].v);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    const y = ty(above ? samples[i].v : 0);
+    if (above) {
+      if (!inSegment) { ctx.beginPath(); ctx.moveTo(x, y); inSegment = true; }
+      else ctx.lineTo(x, y);
+    } else if (inSegment) {
+      ctx.lineTo(x, ty(0));
+      ctx.stroke();
+      inSegment = false;
+    }
   }
-  ctx.stroke();
+  if (inSegment) ctx.stroke();
 
-  // fill under curve
+  // fill under curve — only above threshold
   ctx.fillStyle = CURVE_FILL;
-  ctx.lineTo(tx(samples[samples.length - 1].t), ty(0));
-  ctx.lineTo(tx(samples[0].t), ty(0));
-  ctx.closePath();
-  ctx.fill();
+  inSegment = false;
+  for (let i = 0; i < samples.length; i++) {
+    const above = samples[i].v >= thresholdMg;
+    const x = tx(samples[i].t);
+    const y = ty(above ? samples[i].v : 0);
+    if (above) {
+      if (!inSegment) { ctx.beginPath(); ctx.moveTo(x, ty(0)); ctx.lineTo(x, y); inSegment = true; }
+      else ctx.lineTo(x, y);
+    } else if (inSegment) {
+      ctx.lineTo(x, ty(0));
+      ctx.closePath();
+      ctx.fill();
+      inSegment = false;
+    }
+  }
+  if (inSegment) {
+    const last = samples[samples.length - 1];
+    ctx.lineTo(tx(last.t), ty(0));
+    ctx.closePath();
+    ctx.fill();
+  }
 
   // dots for each entry
   ctx.fillStyle = CURVE_COLOR;
@@ -384,19 +445,65 @@ function drawGraph() {
     ctx.arc(x, y, DOT_RADIUS, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  // crosshair
+  if (hoverX !== null) {
+    const xPx = hoverX * W;
+    const hoverT = earliest + ((xPx - gPad.left) / gw) * tRange;
+    const hoverMg = Math.round(caffeineAt(hoverT));
+    const curveY = ty(caffeineAt(hoverT));
+
+    // vertical dashed line
+    ctx.strokeStyle = "#aaa";
+    ctx.lineWidth = 1;
+    ctx.setLineDash(DASH_PATTERN);
+    ctx.beginPath();
+    ctx.moveTo(xPx, gPad.top);
+    ctx.lineTo(xPx, gPad.top + gh);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // dot on curve
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(xPx, curveY, DOT_RADIUS + 1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // label
+    ctx.fillStyle = "#ddd";
+    ctx.textAlign = "center";
+    ctx.fillText(`${fmtHHMM(new Date(hoverT))} ${hoverMg}mg`, xPx, gPad.top - 4);
+  }
 }
 
 // --- Settings ---
-const settingsPanel = document.getElementById("settings") as HTMLDivElement;
+const settingsOverlay = document.getElementById("settings-overlay") as HTMLDivElement;
+const defaultMgInput = document.getElementById("default-mg-input") as HTMLInputElement;
 const halfLifeInput = document.getElementById("half-life-input") as HTMLInputElement;
+const thresholdInput = document.getElementById("threshold-input") as HTMLInputElement;
 
-document.getElementById("settings-toggle")!.addEventListener("click", () => {
-  const hidden = settingsPanel.hasAttribute("hidden");
-  if (hidden) {
-    settingsPanel.removeAttribute("hidden");
-    halfLifeInput.value = String(halfLifeH);
-  } else {
-    settingsPanel.setAttribute("hidden", "");
+function openSettings() {
+  defaultMgInput.value = String(defaultMg);
+  halfLifeInput.value = String(halfLifeH);
+  thresholdInput.value = String(thresholdMg);
+  settingsOverlay.removeAttribute("hidden");
+}
+function closeSettings() {
+  settingsOverlay.setAttribute("hidden", "");
+}
+
+document.getElementById("settings-toggle")!.addEventListener("click", openSettings);
+document.getElementById("settings-close")!.addEventListener("click", closeSettings);
+settingsOverlay.addEventListener("click", (e) => {
+  if (e.target === settingsOverlay) closeSettings();
+});
+
+defaultMgInput.addEventListener("change", () => {
+  const val = Number(defaultMgInput.value);
+  if (val > 0) {
+    defaultMg = val;
+    mgInput.value = String(defaultMg);
+    saveSettings();
   }
 });
 
@@ -404,21 +511,49 @@ halfLifeInput.addEventListener("change", () => {
   const val = Number(halfLifeInput.value);
   if (val > 0) {
     halfLifeH = val;
-    saveHalfLife();
+    saveSettings();
     render();
   }
 });
 
-document.getElementById("reset-half-life")!.addEventListener("click", () => {
+thresholdInput.addEventListener("change", () => {
+  const val = Number(thresholdInput.value);
+  if (val >= 0) {
+    thresholdMg = val;
+    saveSettings();
+    render();
+  }
+});
+
+document.getElementById("reset-settings")!.addEventListener("click", () => {
   halfLifeH = DEFAULT_HALF_LIFE_H;
+  defaultMg = DEFAULT_DEFAULT_MG;
+  thresholdMg = DEFAULT_THRESHOLD_MG;
+  defaultMgInput.value = String(DEFAULT_DEFAULT_MG);
   halfLifeInput.value = String(DEFAULT_HALF_LIFE_H);
-  saveHalfLife();
+  thresholdInput.value = String(DEFAULT_THRESHOLD_MG);
+  mgInput.value = String(DEFAULT_DEFAULT_MG);
+  saveSettings();
+  render();
+});
+
+document.getElementById("reset-all")!.addEventListener("click", () => {
+  if (!confirm("Reset everything? All entries and settings will be deleted.")) return;
+  entries = [];
+  nextId = 1;
+  halfLifeH = DEFAULT_HALF_LIFE_H;
+  defaultMg = DEFAULT_DEFAULT_MG;
+  thresholdMg = DEFAULT_THRESHOLD_MG;
+  mgInput.value = String(DEFAULT_DEFAULT_MG);
+  save();
+  saveSettings();
+  closeSettings();
   render();
 });
 
 // --- Export / Import ---
 document.getElementById("export-json")!.addEventListener("click", () => {
-  const data = JSON.stringify({ entries, halfLifeH }, null, 2);
+  const data = JSON.stringify({ entries, halfLifeH, defaultMg, thresholdMg }, null, 2);
   const blob = new Blob([data], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -447,14 +582,45 @@ importFile.addEventListener("change", () => {
       }
       if (typeof data.halfLifeH === "number" && data.halfLifeH > 0) {
         halfLifeH = data.halfLifeH;
-        saveHalfLife();
-        halfLifeInput.value = String(halfLifeH);
       }
+      if (typeof data.defaultMg === "number" && data.defaultMg > 0) {
+        defaultMg = data.defaultMg;
+        mgInput.value = String(defaultMg);
+      }
+      if (typeof data.thresholdMg === "number" && data.thresholdMg >= 0) {
+        thresholdMg = data.thresholdMg;
+      }
+      saveSettings();
       render();
     } catch { /* ignore bad files */ }
   };
   reader.readAsText(file);
   importFile.value = "";
+});
+
+// --- Crosshair ---
+let hoverX: number | null = null;
+
+function onPointerMove(e: PointerEvent) {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const pad = GRAPH_PAD.left * rect.width;
+  const right = rect.width - GRAPH_PAD.right * rect.width;
+  const top = GRAPH_PAD.top * rect.height;
+  const bottom = rect.height - GRAPH_PAD.bottom * rect.height;
+  if (x >= pad && x <= right && y >= top && y <= bottom) {
+    hoverX = x / rect.width;
+  } else {
+    hoverX = null;
+  }
+  drawGraph();
+}
+
+canvas.addEventListener("pointermove", onPointerMove);
+canvas.addEventListener("pointerleave", () => { hoverX = null; drawGraph(); });
+canvas.addEventListener("click", (e) => {
+  onPointerMove(e as PointerEvent);
 });
 
 // --- Resize handling ---
