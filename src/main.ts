@@ -276,7 +276,7 @@ function caffeineAt(t: number): number {
     // Decay starts from peak time; before peak, no decay yet
     const decayTime = Math.max(0, dt - PEAK_TIME_MS);
     const remaining = absorbed * Math.exp(-k * decayTime);
-    if (remaining >= thresholdMg) total += remaining;
+    total += remaining;
   }
   return total;
 }
