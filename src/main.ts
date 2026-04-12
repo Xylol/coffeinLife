@@ -183,6 +183,7 @@ function renderTable() {
     if (editingId === entry.id && editingField === "time") {
       const inp = document.createElement("input");
       inp.type = "text";
+      inp.size = 1;
       inp.value = fmtTime(entry.time);
       inp.placeholder = "yyyy-MM-dd HH:MM";
       inp.addEventListener("keydown", (e) => {
@@ -216,6 +217,7 @@ function renderTable() {
     if (editingId === entry.id && editingField === "mg") {
       const inp = document.createElement("input");
       inp.type = "text";
+      inp.size = 1;
       inp.inputMode = "numeric";
       inp.value = String(entry.mg);
       inp.addEventListener("keydown", (e) => {
@@ -264,6 +266,10 @@ function absorption(dt: number): number {
   if (dt >= PEAK_TIME_MS) return 1;
   // Smooth ramp using sine curve (0 → 1 over peak time)
   return Math.sin((dt / PEAK_TIME_MS) * (Math.PI / 2));
+}
+
+function isRising(t: number): boolean {
+  return entries.some((e) => e.time <= t && t - e.time < PEAK_TIME_MS);
 }
 
 function caffeineAt(t: number): number {
@@ -393,12 +399,12 @@ function drawGraph() {
     ctx.fillText(`now ${nowMg}mg`, tx(now), gPad.top - 4);
   }
 
-  // curve — only draw segments above threshold
+  // curve — only draw segments above threshold (skip threshold during rise)
   ctx.strokeStyle = CURVE_COLOR;
   ctx.lineWidth = CURVE_WIDTH;
   let inSegment = false;
   for (let i = 0; i < samples.length; i++) {
-    const above = samples[i].v >= thresholdMg;
+    const above = samples[i].v >= thresholdMg || isRising(samples[i].t);
     const x = tx(samples[i].t);
     const y = ty(above ? samples[i].v : 0);
     if (above) {
@@ -412,11 +418,11 @@ function drawGraph() {
   }
   if (inSegment) ctx.stroke();
 
-  // fill under curve — only above threshold
+  // fill under curve — only above threshold (skip threshold during rise)
   ctx.fillStyle = CURVE_FILL;
   inSegment = false;
   for (let i = 0; i < samples.length; i++) {
-    const above = samples[i].v >= thresholdMg;
+    const above = samples[i].v >= thresholdMg || isRising(samples[i].t);
     const x = tx(samples[i].t);
     const y = ty(above ? samples[i].v : 0);
     if (above) {
